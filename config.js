@@ -121,8 +121,73 @@ function parseManual(raw, envName, errors) {
   return blocks;
 }
 
-export function loadConfig(env = process.env) {
+// Один файл вместо длинных переменных.
+//
+// Поля ввода в панелях хостингов бывают короткими — сотня-другая символов, — а список
+// из 27 профилей занимает под пять тысяч. Поэтому всё объёмное (профили, параметры
+// ручного ввода, routing-ссылка) кладётся одним JSON-файлом, а в переменных остаются
+// только короткие секреты: пароли ролей и SESSION_SECRET.
+//
+// Формат файла:
+//   {
+//     "routingLink": "happ://routing/onadd/...",
+//     "roles": {
+//       "sadko":  { "brand": "...", "profiles": [{name, sub, token}, ...], "manual": {...} },
+//       "alexde": { ... }
+//     }
+//   }
+//
+// Значения из файла раскладываются в те же ключи, что и переменные, поэтому дальше
+// работает ровно та же проверка — отдельной ветки валидации нет и разойтись им негде.
+function applyConfigFile(env, errors) {
+  const path = (env.APP_CONFIG_FILE || '').trim();
+  if (!path) return env;
+
+  let doc;
+  try {
+    doc = JSON.parse(fs.readFileSync(path, 'utf8'));
+  } catch (e) {
+    errors.push(`APP_CONFIG_FILE: не удалось прочитать ${path} — ${e.code || e.message}`);
+    return env;
+  }
+  if (!doc || typeof doc !== 'object' || Array.isArray(doc)) {
+    errors.push('APP_CONFIG_FILE: ожидается JSON-объект с полями "routingLink" и "roles"');
+    return env;
+  }
+
+  const merged = { ...env };
+  const put = (key, value) => {
+    if (value === undefined || value === null) return;
+    if (merged[key] && merged[key].trim()) {
+      errors.push(`${key} задан и в переменной, и в APP_CONFIG_FILE — оставьте что-то одно, иначе непонятно, что считать актуальным`);
+      return;
+    }
+    merged[key] = typeof value === 'string' ? value : JSON.stringify(value);
+  };
+
+  put('ROUTING_LINK', doc.routingLink);
+
+  const roles = doc.roles && typeof doc.roles === 'object' ? doc.roles : {};
+  for (const [role, section] of Object.entries(roles)) {
+    const keys = ENV_KEYS[role];
+    if (!keys) {
+      errors.push(`APP_CONFIG_FILE: неизвестная роль "${role}", допустимы: ${ROLES.join(', ')}`);
+      continue;
+    }
+    if (!section || typeof section !== 'object') {
+      errors.push(`APP_CONFIG_FILE: roles.${role} — ожидается объект`);
+      continue;
+    }
+    put(keys.profiles, section.profiles);
+    put(keys.manual, section.manual);
+    put(keys.brand, section.brand);
+  }
+  return merged;
+}
+
+export function loadConfig(rawEnv = process.env) {
   const errors = [];
+  const env = applyConfigFile(rawEnv, errors);
 
   for (const name of ['SESSION_SECRET', 'ROUTING_LINK']) {
     if (!env[name] || !env[name].trim()) errors.push(`не задана обязательная переменная ${name}`);
