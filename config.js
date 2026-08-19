@@ -27,7 +27,14 @@ function fail(messages) {
   process.exit(1);
 }
 
-function parseProfiles(raw, envName, errors) {
+// Токен персональной ссылки: ровно 32 hex-символа, как `openssl rand -hex 16`.
+const TOKEN_RE = /^[0-9a-f]{32}$/;
+
+// В сообщениях об ошибках токен показывается обрезанным: старт пишет их в
+// stderr платформы, а токен — это ключ доступа к чужому конфигу.
+const shortToken = (token) => `${String(token).slice(0, 8)}…`;
+
+function parseProfiles(raw, envName, errors, seenTokens) {
   let value;
   try {
     value = JSON.parse(raw);
@@ -36,7 +43,7 @@ function parseProfiles(raw, envName, errors) {
     return [];
   }
   if (!Array.isArray(value)) {
-    errors.push(`${envName}: ожидается JSON-массив вида [{"name":"...","sub":"..."}]`);
+    errors.push(`${envName}: ожидается JSON-массив вида [{"name":"...","sub":"...","token":"..."}]`);
     return [];
   }
   const profiles = [];
@@ -53,9 +60,31 @@ function parseProfiles(raw, envName, errors) {
       errors.push(`${envName}[${i}]: отсутствует непустое поле "sub"`);
       return;
     }
+    const name = item.name.trim();
+    const where = `${envName}[${i}] («${name}»)`;
+    if (typeof item.token !== 'string' || !item.token.trim()) {
+      errors.push(`${where}: отсутствует поле "token" — без него человеку нечего выдать, персональная ссылка /u/<token> не построится`);
+      return;
+    }
+    const token = item.token.trim();
+    if (!TOKEN_RE.test(token)) {
+      errors.push(`${where}: "token" должен быть 32 hex-символа (0-9a-f), получено ${JSON.stringify(token)}; сгенерировать: openssl rand -hex 16`);
+      return;
+    }
+    // Уникальность — глобальная, поверх всех ролей: совпадение токенов
+    // означало бы, что по одной ссылке отдаётся чужой конфиг.
+    const clash = seenTokens.get(token);
+    if (clash) {
+      errors.push(
+        `токены профилей должны различаться: ${shortToken(token)} задан и в ${clash.envName} («${clash.name}»), и в ${envName} («${name}») — по одной персональной ссылке открывался бы конфиг другого человека`
+      );
+      return;
+    }
+    seenTokens.set(token, { envName, name });
     profiles.push({
-      name: item.name.trim(),
+      name,
       sub: item.sub.trim(),
+      token,
       note: typeof item.note === 'string' ? item.note.trim() : '',
     });
   });
@@ -97,6 +126,7 @@ export function loadConfig(env = process.env) {
 
   const roles = {};
   const skipped = [];
+  const seenTokens = new Map(); // token -> { envName, name } — общая на все роли
   for (const role of ROLES) {
     const keys = ENV_KEYS[role];
     const password = env[keys.password];
@@ -116,7 +146,7 @@ export function loadConfig(env = process.env) {
     if (!profilesRaw || !profilesRaw.trim()) {
       errors.push(`задан ${keys.password}, но не задан ${keys.profiles}`);
     }
-    const profiles = profilesRaw ? parseProfiles(profilesRaw, keys.profiles, errors) : [];
+    const profiles = profilesRaw ? parseProfiles(profilesRaw, keys.profiles, errors, seenTokens) : [];
     if (profilesRaw && profiles.length === 0 && !errors.length) {
       errors.push(`${keys.profiles}: список профилей пуст`);
     }
@@ -147,6 +177,13 @@ export function loadConfig(env = process.env) {
 
   if (errors.length) fail(errors);
 
+  // Индекс строится один раз на старте: на запросе /u/:token нужен один
+  // Map.get, а не перебор всех профилей всех ролей.
+  const byToken = new Map();
+  for (const role of Object.values(roles)) {
+    for (const profile of role.profiles) byToken.set(profile.token, { role, profile });
+  }
+
   return {
     port,
     sessionSecret: env.SESSION_SECRET,
@@ -155,7 +192,8 @@ export function loadConfig(env = process.env) {
     trustProxy: env.TRUST_PROXY === '1',
     roles,
     roleIds: Object.keys(roles),
+    byToken,
   };
 }
 
-export { ROLES };
+export { ROLES, TOKEN_RE };
