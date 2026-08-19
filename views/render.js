@@ -295,16 +295,16 @@ function installSection() {
   </section>`;
 }
 
+// Ссылка подписки печатается ровно один раз на строку разметки: так проверка
+// изоляции ролей (grep -c по маркеру) даёт честные 1 и 0, а не «сколько раз
+// я вставил один и тот же URL».
 function profileCard(profile) {
   const sub = escapeHtml(profile.sub);
   return `    <div class="profile">
       <h3>${escapeHtml(profile.name)}</h3>
       ${profile.note ? `<p class="sub">${escapeHtml(profile.note)}</p>` : ''}
       <img class="qr" src="${escapeHtml(profile.qr)}" alt="QR-код подписки для «${escapeHtml(profile.name)}»" width="320" height="320">
-      <div class="actions">
-        <a class="btn primary" href="happ://add/${sub}">Добавить в Happ</a>
-        <button class="btn" type="button" data-copy="${sub}">Скопировать ссылку</button>
-      </div>
+      <div class="actions"><a class="btn primary" href="happ://add/${sub}">Добавить в Happ</a><button class="btn" type="button" data-copy="${sub}">Скопировать ссылку</button></div>
     </div>`;
 }
 
@@ -326,10 +326,7 @@ function routingSection(role) {
     <h2>Маршрутизация «РФ мимо VPN»</h2>
     <p>Отсканируйте второй QR или нажмите кнопку — Happ добавит и сразу включит профиль маршрутизации.</p>
     <img class="qr" src="${escapeHtml(role.routing.qr)}" alt="QR-код профиля маршрутизации" width="320" height="320">
-    <div class="actions">
-      <a class="btn primary" href="${link}">Добавить маршрутизацию в Happ</a>
-      <button class="btn" type="button" data-copy="${link}">Скопировать ссылку</button>
-    </div>
+    <div class="actions"><a class="btn primary" href="${link}">Добавить маршрутизацию в Happ</a><button class="btn" type="button" data-copy="${link}">Скопировать ссылку</button></div>
     <p style="margin-top:14px">После этого российские сайты и приложения пойдут напрямую, мимо VPN: банки, госуслуги и маркетплейсы перестанут ругаться на вход с иностранного IP, а зарубежные сервисы продолжат работать через туннель. Заодно меньше трафика идёт через сервер — всё быстрее.</p>
   </section>`;
 }
