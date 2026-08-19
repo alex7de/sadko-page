@@ -3,8 +3,8 @@ import cookieParser from 'cookie-parser';
 
 import { loadConfig } from './config.js';
 import { createAuth, COOKIE_NAME } from './auth.js';
-import { buildRoleView } from './qr.js';
-import { renderLogin, renderPage } from './views/render.js';
+import { buildRoleView, buildProfileView } from './qr.js';
+import { renderLogin, renderPage, renderInvalidLink } from './views/render.js';
 
 const config = loadConfig();
 const auth = createAuth(config);
@@ -71,6 +71,33 @@ app.get('/', async (req, res, next) => {
     // Сюда попадает только объект своей роли — чужие профили в ответ не строятся.
     const view = await buildRoleView(config.roles[req.role], config.routingLink);
     res.type('html').send(renderPage({ role: view }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Персональная ссылка — основной способ раздачи: человек получает страницу
+// ровно со своим профилем. Ни пароля, ни cookie: токен в URL и есть ключ.
+// В ответ строится один профиль из индекса, поэтому чужих данных в HTML нет
+// физически — не спрятано стилями, а просто не существует в этом ответе.
+app.get('/u/:token', async (req, res, next) => {
+  const ip = req.ip || 'unknown';
+  if (auth.isLocked(ip)) {
+    res.status(429).type('html').send(renderInvalidLink());
+    return;
+  }
+  const entry = config.byToken.get(req.params.token); // один Map.get, без перебора
+  if (!entry) {
+    // Тот же счётчик, что у /login: перебор токенов упирается в него же.
+    // Удачное попадание счётчик не сбрасывает — иначе один валидный токен
+    // обнулял бы лимит перед следующей пачкой попыток.
+    auth.registerFailure(ip);
+    res.status(404).type('html').send(renderInvalidLink());
+    return;
+  }
+  try {
+    const view = await buildProfileView(entry.role, entry.profile, config.routingLink);
+    res.type('html').send(renderPage({ role: view, personal: true }));
   } catch (err) {
     next(err);
   }

@@ -247,6 +247,28 @@ ${head('Вход')}
 </html>`;
 }
 
+// Ответ на неизвестный токен. В теле — одна фраза и ничего больше: ни формы
+// входа, ни названий групп, ни намёка на то, сколько профилей существует.
+// По этой странице перебор токенов не отличить от опечатки в ссылке.
+export function renderInvalidLink() {
+  return `<!doctype html>
+<html lang="ru">
+<head>
+${head('Ссылка недействительна')}
+<style>${STYLE}
+  .narrow { max-width: 380px; margin: 12vh auto 0; }
+</style>
+</head>
+<body>
+<main class="narrow">
+  <div class="card">
+    <h1>Ссылка недействительна</h1>
+  </div>
+</main>
+</body>
+</html>`;
+}
+
 function deviceTabs() {
   return `<div class="tabs" role="tablist" aria-label="Ваше устройство">
 ${DEVICES.map(
@@ -308,11 +330,14 @@ function profileCard(profile) {
     </div>`;
 }
 
-function subscriptionSection(role) {
+function subscriptionSection(role, personal) {
+  const intro = personal
+    ? `<p>Это ваш профиль. В Happ нажмите <b>+</b> → <b>Сканировать QR</b> и наведите камеру на код. С этого же устройства проще нажать «Добавить в Happ».</p>`
+    : `<p>Найдите себя в списке. В Happ нажмите <b>+</b> → <b>Сканировать QR</b> и наведите камеру на свой код. С этого же устройства проще нажать «Добавить в Happ».</p>`;
   return `<section class="card">
     <p class="step">Шаг 2</p>
     <h2>Подписка — ${escapeHtml(role.brand)}</h2>
-    <p>Найдите себя в списке. В Happ нажмите <b>+</b> → <b>Сканировать QR</b> и наведите камеру на свой код. С этого же устройства проще нажать «Добавить в Happ».</p>
+    ${intro}
     <p class="sub">Ссылка личная — она и есть ваш ключ доступа. Не пересылайте её дальше.</p>
 ${role.profiles.map(profileCard).join('\n')}
     <p class="sub" style="margin-top:16px">После добавления откройте профиль и <b>включите</b> подключение — при первом запуске система спросит разрешение на VPN, его нужно дать.</p>
@@ -371,7 +396,13 @@ function troublesSection() {
   </section>`;
 }
 
-export function renderPage({ role }) {
+/**
+ * Одна и та же страница для двух входов: по паролю (весь список своей роли) и
+ * по персональной ссылке (`personal`, ровно один профиль в `role.profiles`).
+ * Разница только в шапке и вводных словах — фильтрации здесь нет и быть не
+ * должно: в `role` уже лежит ровно то, что разрешено показать.
+ */
+export function renderPage({ role, personal = false }) {
   return `<!doctype html>
 <html lang="ru" data-device="ios">
 <head>
@@ -385,7 +416,7 @@ ${head(role.brand)}
       <h1>${escapeHtml(role.brand)}</h1>
       <p class="sub">Инструкция по подключению. Занимает пару минут.</p>
     </div>
-    <a class="out" href="/logout">Выйти</a>
+    ${personal ? '' : '<a class="out" href="/logout">Выйти</a>'}
   </header>
 
   <section class="card">
@@ -396,7 +427,7 @@ ${head(role.brand)}
 
   ${installSection()}
 
-  ${subscriptionSection(role)}
+  ${subscriptionSection(role, personal)}
 
   ${routingSection(role)}
 
