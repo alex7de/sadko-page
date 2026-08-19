@@ -62,7 +62,9 @@ app.get('/logout', (req, res) => {
 
 app.get('/', async (req, res, next) => {
   if (!req.role) {
-    res.status(401).type('html').send(renderLogin());
+    // Форма входа — это нормальная страница, а не ошибка: 401 здесь ломал бы
+    // health-check платформы. Неверный пароль на POST /login всё так же 401.
+    res.type('html').send(renderLogin());
     return;
   }
   try {
