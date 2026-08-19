@@ -1,12 +1,15 @@
 // Вся конфигурация приходит из переменных окружения.
 // В репозитории не должно быть ни одного реального адреса, ключа или пароля.
 
+import fs from 'node:fs';
+
 const ROLES = ['sadko', 'alexde'];
 
 const ENV_KEYS = {
   sadko: {
     password: 'PAGE_PASSWORD_SADKO',
     profiles: 'PROFILES_SADKO_JSON',
+    profilesFile: 'PROFILES_SADKO_FILE',
     manual: 'MANUAL_SADKO_JSON',
     brand: 'BRAND_SADKO',
     defaultBrand: 'Садко-VPN',
@@ -14,6 +17,7 @@ const ENV_KEYS = {
   alexde: {
     password: 'PAGE_PASSWORD_ALEXDE',
     profiles: 'PROFILES_ALEXDE_JSON',
+    profilesFile: 'PROFILES_ALEXDE_FILE',
     manual: 'MANUAL_ALEXDE_JSON',
     brand: 'BRAND_ALEXDE',
     defaultBrand: 'ALEXDE VPN',
@@ -130,12 +134,27 @@ export function loadConfig(env = process.env) {
   for (const role of ROLES) {
     const keys = ENV_KEYS[role];
     const password = env[keys.password];
-    const profilesRaw = env[keys.profiles];
+    // Список профилей длинный: 27 человек дают больше четырёх тысяч символов, а поля
+    // переменных в панелях бывают короче. Поэтому его можно положить файлом и указать
+    // путь — так работает любое монтирование конфигов или секретов.
+    let profilesRaw = env[keys.profiles];
+    const profilesPath = (env[keys.profilesFile] || '').trim();
+    if (profilesPath) {
+      if (profilesRaw && profilesRaw.trim()) {
+        errors.push(`заданы одновременно ${keys.profiles} и ${keys.profilesFile} — оставьте что-то одно, иначе непонятно, что считать актуальным`);
+      }
+      try {
+        profilesRaw = fs.readFileSync(profilesPath, 'utf8');
+      } catch (e) {
+        errors.push(`${keys.profilesFile}: не удалось прочитать ${profilesPath} — ${e.code || e.message}`);
+        profilesRaw = '';
+      }
+    }
 
     // Роль можно не настраивать: группа появляется позже (например, когда выдадут
     // второй IP). Но пароль и профили задаются только парой — иначе роль либо
     // недоступна при живых конфигах, либо пускает в пустоту.
-    const configured = Boolean((password && password.trim()) || (profilesRaw && profilesRaw.trim()));
+    const configured = Boolean((password && password.trim()) || (profilesRaw && profilesRaw.trim()) || profilesPath);
     if (!configured) {
       skipped.push(role);
       continue;
@@ -144,7 +163,7 @@ export function loadConfig(env = process.env) {
       errors.push(`задан ${keys.profiles}, но не задан ${keys.password}`);
     }
     if (!profilesRaw || !profilesRaw.trim()) {
-      errors.push(`задан ${keys.password}, но не задан ${keys.profiles}`);
+      errors.push(`задан ${keys.password}, но не задан ни ${keys.profiles}, ни ${keys.profilesFile}`);
     }
     const profiles = profilesRaw ? parseProfiles(profilesRaw, keys.profiles, errors, seenTokens) : [];
     if (profilesRaw && profiles.length === 0 && !errors.length) {
