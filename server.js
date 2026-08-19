@@ -162,7 +162,7 @@ app.get('/', async (req, res, next) => {
   }
   try {
     // Сюда попадает только объект своей роли — чужие профили в ответ не строятся.
-    const view = await buildRoleView(config.roles[req.role], config.routingLink);
+    const view = await buildRoleView(config.roles[req.role], config.routingLink, originOf(req));
     res.type('html').send(renderPage({ role: view, origin: originOf(req) }));
   } catch (err) {
     next(err);
@@ -189,7 +189,7 @@ app.get('/u/:token', async (req, res, next) => {
     return;
   }
   try {
-    const view = await buildProfileView(entry.role, entry.profile, config.routingLink);
+    const view = await buildProfileView(entry.role, entry.profile, config.routingLink, originOf(req));
     res.type('html').send(renderPage({ role: view, personal: true }));
   } catch (err) {
     next(err);

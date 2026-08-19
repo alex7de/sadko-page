@@ -27,12 +27,19 @@ export function qrDataUrl(text) {
   return pending;
 }
 
-async function view(role, profiles, routingLink) {
+// В QR и в кнопку идёт ссылка на /s/<токен> этой же страницы, а не прямой адрес
+// подписки на VPN-сервере. Причина практическая: сервер отдаёт подписки на порту
+// 8444, и мобильные операторы его режут — у пользователя страница открывалась,
+// а конфиг не подтягивался. Через 443 проходит везде.
+async function view(role, profiles, routingLink, origin) {
+  const subUrl = (p) => (origin ? `${origin}/s/${p.token}` : p.sub);
   return {
     id: role.id,
     brand: role.brand,
     manual: role.manual,
-    profiles: await Promise.all(profiles.map(async (p) => ({ ...p, qr: await qrDataUrl(p.sub) }))),
+    profiles: await Promise.all(
+      profiles.map(async (p) => ({ ...p, sub: subUrl(p), qr: await qrDataUrl(subUrl(p)) })),
+    ),
     routing: { link: routingLink, qr: await qrDataUrl(routingLink) },
   };
 }
@@ -43,14 +50,15 @@ async function view(role, profiles, routingLink) {
  */
 const roleCache = new Map();
 
-export function buildRoleView(role, routingLink) {
-  let pending = roleCache.get(role.id);
+export function buildRoleView(role, routingLink, origin) {
+  const key = `${role.id}|${origin}`;
+  let pending = roleCache.get(key);
   if (!pending) {
-    pending = view(role, role.profiles, routingLink).catch((err) => {
-      roleCache.delete(role.id);
+    pending = view(role, role.profiles, routingLink, origin).catch((err) => {
+      roleCache.delete(key);
       throw err;
     });
-    roleCache.set(role.id, pending);
+    roleCache.set(key, pending);
   }
   return pending;
 }
@@ -62,14 +70,15 @@ export function buildRoleView(role, routingLink) {
  */
 const profileCache = new Map();
 
-export function buildProfileView(role, profile, routingLink) {
-  let pending = profileCache.get(profile.token);
+export function buildProfileView(role, profile, routingLink, origin) {
+  const key = `${profile.token}|${origin}`;
+  let pending = profileCache.get(key);
   if (!pending) {
-    pending = view(role, [profile], routingLink).catch((err) => {
-      profileCache.delete(profile.token);
+    pending = view(role, [profile], routingLink, origin).catch((err) => {
+      profileCache.delete(key);
       throw err;
     });
-    profileCache.set(profile.token, pending);
+    profileCache.set(key, pending);
   }
   return pending;
 }
