@@ -6,6 +6,10 @@ import { createAuth, COOKIE_NAME } from './auth.js';
 import { buildRoleView, buildProfileView } from './qr.js';
 import { renderLogin, renderPage, renderInvalidLink } from './views/render.js';
 
+// Origin берётся из запроса, а не из настройки: домен контейнера может смениться,
+// и зашитый в конфиг адрес молча начал бы раздавать нерабочие ссылки.
+const originOf = (req) => `${req.protocol}://${req.get('host')}`;
+
 const config = loadConfig();
 const auth = createAuth(config);
 
@@ -114,7 +118,7 @@ app.get('/', async (req, res, next) => {
   try {
     // Сюда попадает только объект своей роли — чужие профили в ответ не строятся.
     const view = await buildRoleView(config.roles[req.role], config.routingLink);
-    res.type('html').send(renderPage({ role: view }));
+    res.type('html').send(renderPage({ role: view, origin: originOf(req) }));
   } catch (err) {
     next(err);
   }

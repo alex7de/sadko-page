@@ -112,6 +112,18 @@ const STYLE = `
   .profile { border-top: 1px solid var(--line); padding-top: 16px; margin-top: 16px; }
   .profile:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
   .profile h3 { margin-top: 0; }
+  .share {
+    margin-top: 14px;
+    padding-top: 14px;
+    border-top: 1px dashed var(--line, #d6d8e0);
+  }
+  .share .link {
+    display: block;
+    word-break: break-all;
+    font-size: 13px;
+    opacity: .8;
+    margin: 6px 0 10px;
+  }
   .qr {
     display: block;
     width: 100%;
@@ -320,17 +332,36 @@ function installSection() {
 // Ссылка подписки печатается ровно один раз на строку разметки: так проверка
 // изоляции ролей (grep -c по маркеру) даёт честные 1 и 0, а не «сколько раз
 // я вставил один и тот же URL».
-function profileCard(profile) {
+// Имя человека уходит в имя файла QR — иначе владелец, скачав восемь картинок,
+// получит qr.png, qr(1).png и так далее и не поймёт, чей код где.
+function safeFileName(name) {
+  return String(name).replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '') || 'profile';
+}
+
+function profileCard(profile, personal, origin) {
   const sub = escapeHtml(profile.sub);
+  // Персональная ссылка на страницу — то, что владелец раздаёт людям. В личном
+  // режиме её показывать незачем: человек уже пришёл именно по ней.
+  const share = !personal && origin && profile.token
+    ? `<div class="share">
+        <p class="sub">Персональная ссылка для «${escapeHtml(profile.name)}» — её и отправляйте:</p>
+        <code class="link">${escapeHtml(origin)}/u/${escapeHtml(profile.token)}</code>
+        <div class="actions">
+          <button class="btn" type="button" data-copy="${escapeHtml(origin)}/u/${escapeHtml(profile.token)}">Скопировать персональную ссылку</button>
+          <a class="btn" href="${escapeHtml(profile.qr)}" download="QR-${escapeHtml(safeFileName(profile.name))}.png">Скачать QR</a>
+        </div>
+      </div>`
+    : '';
   return `    <div class="profile">
       <h3>${escapeHtml(profile.name)}</h3>
       ${profile.note ? `<p class="sub">${escapeHtml(profile.note)}</p>` : ''}
       <img class="qr" src="${escapeHtml(profile.qr)}" alt="QR-код подписки для «${escapeHtml(profile.name)}»" width="320" height="320">
       <div class="actions"><a class="btn primary" href="happ://add/${sub}">Добавить в Happ</a><button class="btn" type="button" data-copy="${sub}">Скопировать ссылку</button></div>
+      ${share}
     </div>`;
 }
 
-function subscriptionSection(role, personal) {
+function subscriptionSection(role, personal, origin) {
   const intro = personal
     ? `<p>Это ваш профиль. В Happ нажмите <b>+</b> → <b>Сканировать QR</b> и наведите камеру на код. С этого же устройства проще нажать «Добавить в Happ».</p>`
     : `<p>Найдите себя в списке. В Happ нажмите <b>+</b> → <b>Сканировать QR</b> и наведите камеру на свой код. С этого же устройства проще нажать «Добавить в Happ».</p>`;
@@ -339,7 +370,7 @@ function subscriptionSection(role, personal) {
     <h2>Подписка — ${escapeHtml(role.brand)}</h2>
     ${intro}
     <p class="sub">Ссылка личная — она и есть ваш ключ доступа. Не пересылайте её дальше.</p>
-${role.profiles.map(profileCard).join('\n')}
+${role.profiles.map((pr) => profileCard(pr, personal, origin)).join('\n')}
     <p class="sub" style="margin-top:16px">После добавления откройте профиль и <b>включите</b> подключение — при первом запуске система спросит разрешение на VPN, его нужно дать.</p>
   </section>`;
 }
@@ -402,7 +433,7 @@ function troublesSection() {
  * Разница только в шапке и вводных словах — фильтрации здесь нет и быть не
  * должно: в `role` уже лежит ровно то, что разрешено показать.
  */
-export function renderPage({ role, personal = false }) {
+export function renderPage({ role, personal = false, origin = '' }) {
   return `<!doctype html>
 <html lang="ru" data-device="ios">
 <head>
@@ -427,7 +458,7 @@ ${head(role.brand)}
 
   ${installSection()}
 
-  ${subscriptionSection(role, personal)}
+  ${subscriptionSection(role, personal, origin)}
 
   ${routingSection(role)}
 
