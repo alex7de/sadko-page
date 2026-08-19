@@ -119,6 +119,13 @@ export function loadConfig(env = process.env) {
     };
   }
 
+  // Одинаковые пароли у ролей — молчаливая утечка: roleForPassword вернёт последнюю
+  // совпавшую роль, и вошедший под «своим» паролем увидит чужие конфиги.
+  const given = ROLES.map((r) => roles[r].password).filter((v) => v && v.trim());
+  if (given.length === ROLES.length && new Set(given).size !== given.length) {
+    errors.push('пароли ролей должны различаться: одинаковые значения дали бы одной группе доступ к конфигам другой');
+  }
+
   const port = Number.parseInt(env.PORT || '3000', 10);
   if (!Number.isInteger(port) || port <= 0 || port > 65535) {
     errors.push(`PORT: ожидается число 1..65535, получено ${JSON.stringify(env.PORT)}`);
