@@ -96,15 +96,25 @@ export function loadConfig(env = process.env) {
   }
 
   const roles = {};
+  const skipped = [];
   for (const role of ROLES) {
     const keys = ENV_KEYS[role];
     const password = env[keys.password];
     const profilesRaw = env[keys.profiles];
+
+    // Роль можно не настраивать: группа появляется позже (например, когда выдадут
+    // второй IP). Но пароль и профили задаются только парой — иначе роль либо
+    // недоступна при живых конфигах, либо пускает в пустоту.
+    const configured = Boolean((password && password.trim()) || (profilesRaw && profilesRaw.trim()));
+    if (!configured) {
+      skipped.push(role);
+      continue;
+    }
     if (!password || !password.trim()) {
-      errors.push(`не задана обязательная переменная ${keys.password}`);
+      errors.push(`задан ${keys.profiles}, но не задан ${keys.password}`);
     }
     if (!profilesRaw || !profilesRaw.trim()) {
-      errors.push(`не задана обязательная переменная ${keys.profiles}`);
+      errors.push(`задан ${keys.password}, но не задан ${keys.profiles}`);
     }
     const profiles = profilesRaw ? parseProfiles(profilesRaw, keys.profiles, errors) : [];
     if (profilesRaw && profiles.length === 0 && !errors.length) {
@@ -119,10 +129,14 @@ export function loadConfig(env = process.env) {
     };
   }
 
+  if (Object.keys(roles).length === 0) {
+    errors.push('не настроена ни одна роль: задайте хотя бы пару PAGE_PASSWORD_* и PROFILES_*_JSON');
+  }
+
   // Одинаковые пароли у ролей — молчаливая утечка: roleForPassword вернёт последнюю
   // совпавшую роль, и вошедший под «своим» паролем увидит чужие конфиги.
-  const given = ROLES.map((r) => roles[r].password).filter((v) => v && v.trim());
-  if (given.length === ROLES.length && new Set(given).size !== given.length) {
+  const given = Object.values(roles).map((r) => r.password);
+  if (given.length > 1 && new Set(given).size !== given.length) {
     errors.push('пароли ролей должны различаться: одинаковые значения дали бы одной группе доступ к конфигам другой');
   }
 
@@ -140,7 +154,7 @@ export function loadConfig(env = process.env) {
     cookieSecure: env.COOKIE_INSECURE !== '1',
     trustProxy: env.TRUST_PROXY === '1',
     roles,
-    roleIds: ROLES,
+    roleIds: Object.keys(roles),
   };
 }
 
