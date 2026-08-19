@@ -5,6 +5,12 @@ export const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 дней
 
 const LOGIN_WINDOW_MS = 15 * 60 * 1000;
 const LOGIN_MAX_FAILURES = 10;
+// Перебор персональных ссылок ограничивать почти нечем: токен 128-битный, и разница
+// между «10 попыток за 15 минут» и «без ограничений» лежит за пределами разумного
+// времени. Зато счётчик легко бьёт по своим: коллеги в офисе сидят за общим NAT, и
+// десяток устаревших ссылок заблокировал бы всю компанию. Поэтому у ссылок свой,
+// щедрый счётчик, не влияющий на вход по паролю.
+const TOKEN_MAX_FAILURES = 200;
 
 const sha256 = (value) => crypto.createHash('sha256').update(String(value), 'utf8').digest();
 
@@ -58,37 +64,40 @@ export function createAuth(config) {
   }
 
   // --- лимит попыток входа: счётчик по IP в памяти ---
-  const failures = new Map();
+  const counters = { login: new Map(), token: new Map() };
+  const ceilings = { login: LOGIN_MAX_FAILURES, token: TOKEN_MAX_FAILURES };
 
-  function pruneFailures(now) {
-    for (const [ip, entry] of failures) {
-      if (now - entry.first > LOGIN_WINDOW_MS) failures.delete(ip);
+  function pruneFailures(store, now) {
+    for (const [ip, entry] of store) {
+      if (now - entry.first > LOGIN_WINDOW_MS) store.delete(ip);
     }
   }
 
-  function isLocked(ip) {
-    const entry = failures.get(ip);
+  function isLocked(ip, kind = 'login') {
+    const store = counters[kind];
+    const entry = store.get(ip);
     if (!entry) return false;
     if (Date.now() - entry.first > LOGIN_WINDOW_MS) {
-      failures.delete(ip);
+      store.delete(ip);
       return false;
     }
-    return entry.count >= LOGIN_MAX_FAILURES;
+    return entry.count >= ceilings[kind];
   }
 
-  function registerFailure(ip) {
+  function registerFailure(ip, kind = 'login') {
+    const store = counters[kind];
     const now = Date.now();
-    if (failures.size > 5000) pruneFailures(now);
-    const entry = failures.get(ip);
+    if (store.size > 5000) pruneFailures(store, now);
+    const entry = store.get(ip);
     if (!entry || now - entry.first > LOGIN_WINDOW_MS) {
-      failures.set(ip, { count: 1, first: now });
+      store.set(ip, { count: 1, first: now });
       return;
     }
     entry.count += 1;
   }
 
-  function clearFailures(ip) {
-    failures.delete(ip);
+  function clearFailures(ip, kind = 'login') {
+    counters[kind].delete(ip);
   }
 
   return {
@@ -99,6 +108,6 @@ export function createAuth(config) {
     isLocked,
     registerFailure,
     clearFailures,
-    limits: { windowMs: LOGIN_WINDOW_MS, maxFailures: LOGIN_MAX_FAILURES },
+    limits: { windowMs: LOGIN_WINDOW_MS, maxFailures: LOGIN_MAX_FAILURES, maxTokenMisses: TOKEN_MAX_FAILURES },
   };
 }

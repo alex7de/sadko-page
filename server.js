@@ -82,7 +82,7 @@ app.get('/', async (req, res, next) => {
 // физически — не спрятано стилями, а просто не существует в этом ответе.
 app.get('/u/:token', async (req, res, next) => {
   const ip = req.ip || 'unknown';
-  if (auth.isLocked(ip)) {
+  if (auth.isLocked(ip, 'token')) {
     res.status(429).type('html').send(renderInvalidLink());
     return;
   }
@@ -91,7 +91,7 @@ app.get('/u/:token', async (req, res, next) => {
     // Тот же счётчик, что у /login: перебор токенов упирается в него же.
     // Удачное попадание счётчик не сбрасывает — иначе один валидный токен
     // обнулял бы лимит перед следующей пачкой попыток.
-    auth.registerFailure(ip);
+    auth.registerFailure(ip, 'token');
     res.status(404).type('html').send(renderInvalidLink());
     return;
   }
