@@ -108,6 +108,51 @@ app.get('/logout', (req, res) => {
   res.type('html').send(renderLogin({ status: 'Вы вышли.' }));
 });
 
+// Раздача подписки через саму страницу.
+//
+// Подписки живут на VPN-сервере на порту 8444, и мобильные операторы его режут:
+// у одного пользователя страница на 443 открылась, а конфиг с 8444 не подтянулся
+// ни разу. Здесь тот же файл отдаётся с обычного 443 — контейнер ходит на сервер
+// сам, между ними мобильного оператора нет.
+const subCache = new Map(); // token -> { body, at }
+const SUB_TTL_MS = 5 * 60 * 1000;
+
+app.get('/s/:token', async (req, res) => {
+  const ip = req.ip || 'unknown';
+  if (auth.isLocked(ip, 'token')) return res.status(429).type('text/plain').send('too many requests');
+
+  const hit = config.byToken.get(String(req.params.token || ''));
+  if (!hit) {
+    auth.registerFailure(ip, 'token');
+    return res.status(404).type('text/plain').send('not found');
+  }
+
+  const key = hit.profile.token;
+  const now = Date.now();
+  const cached = subCache.get(key);
+
+  let body = cached && now - cached.at < SUB_TTL_MS ? cached.body : null;
+  if (body === null) {
+    try {
+      const upstream = await fetch(hit.profile.sub, { signal: AbortSignal.timeout(8000) });
+      if (!upstream.ok) throw new Error('HTTP ' + upstream.status);
+      body = await upstream.text();
+      subCache.set(key, { body, at: now });
+    } catch (e) {
+      // Отдаём последнее удачное: сервер может быть недоступен временно, а
+      // человеку нужен конфиг сейчас. Пустой ответ клиент воспримет как «профилей нет»
+      // и молча сотрёт существующие.
+      if (cached) body = cached.body;
+      else return res.status(502).type('text/plain').send('upstream unavailable');
+    }
+  }
+
+  const brand = hit.role?.brand || 'VPN';
+  res.set('Profile-Title', 'base64:' + Buffer.from(brand, 'utf8').toString('base64'));
+  res.set('Profile-Update-Interval', '12');
+  res.type('text/plain; charset=utf-8').send(body);
+});
+
 app.get('/', async (req, res, next) => {
   if (!req.role) {
     // Форма входа — это нормальная страница, а не ошибка: 401 здесь ломал бы
