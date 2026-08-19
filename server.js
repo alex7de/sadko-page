@@ -3,6 +3,7 @@ import cookieParser from 'cookie-parser';
 
 import { loadConfig } from './config.js';
 import { createAuth, COOKIE_NAME } from './auth.js';
+import { buildRoleView } from './qr.js';
 import { renderLogin, renderPage } from './views/render.js';
 
 const config = loadConfig();
@@ -59,22 +60,28 @@ app.get('/logout', (req, res) => {
   res.type('html').send(renderLogin({ status: 'Вы вышли.' }));
 });
 
-app.get('/', (req, res) => {
+app.get('/', async (req, res, next) => {
   if (!req.role) {
     res.status(401).type('html').send(renderLogin());
     return;
   }
-  // Сюда попадает только объект своей роли — чужие профили в ответ не строятся.
-  res.type('html').send(
-    renderPage({
-      role: config.roles[req.role],
-      routingLink: config.routingLink,
-    })
-  );
+  try {
+    // Сюда попадает только объект своей роли — чужие профили в ответ не строятся.
+    const view = await buildRoleView(config.roles[req.role], config.routingLink);
+    res.type('html').send(renderPage({ role: view }));
+  } catch (err) {
+    next(err);
+  }
 });
 
 app.use((req, res) => {
   res.status(404).type('text/plain').send('Not found');
+});
+
+// eslint-disable-next-line no-unused-vars -- express опознаёт обработчик ошибок по арности
+app.use((err, req, res, next) => {
+  console.error('Ошибка при обработке запроса:', err);
+  res.status(500).type('text/plain').send('Внутренняя ошибка');
 });
 
 app.listen(config.port, () => {

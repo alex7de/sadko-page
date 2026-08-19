@@ -60,7 +60,10 @@ export function renderLogin({ error = '', status = '' } = {}) {
 export function renderPage({ role }) {
   const profiles = role.profiles
     .map(
-      (p) => `<li><b>${escapeHtml(p.name)}</b><br><code>${escapeHtml(p.sub)}</code></li>`
+      (p) =>
+        `<li><b>${escapeHtml(p.name)}</b><br>` +
+        `<img src="${escapeHtml(p.qr)}" alt="QR подписки" width="320" height="320"><br>` +
+        `<code>${escapeHtml(p.sub)}</code></li>`
     )
     .join('');
   return `<!doctype html>
